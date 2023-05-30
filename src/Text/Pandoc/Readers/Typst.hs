@@ -21,12 +21,12 @@ import Text.Pandoc.Class
 import Text.Pandoc.Sources
 import Text.Pandoc.Options
 import Text.Pandoc.Definition
-import Typst ( parseTypst, evaluateTypst, EvaluateM(..) )
+import Typst ( parseTypst, evaluateTypst )
 import Typst.Pandoc (contentToPandoc)
 import qualified Data.Text as T
 import Text.Pandoc.UTF8 as UTF8
 import Text.Pandoc.Parsing (sourceName)
-import Control.Monad.Except ( MonadError(throwError) )
+import Control.Monad.Except ( MonadError(throwError, catchError) )
 import Text.Pandoc.Error (PandocError(..))
 import Text.Pandoc.Logging (LogMessage(..))
 
@@ -41,14 +41,11 @@ readTypst _opts inp = do
   case parseTypst inputName (sourcesToText sources) of
     Left e -> throwError $ PandocParseError $ T.pack $ show e
     Right parsed -> do
-      result <- evaluateTypst inputName parsed >>=
+      result <- catchError
+        (evaluateTypst (\fp -> catchError (readFileStrict fp) (\e -> throwError (show e))) inputName parsed >>=
                   either (throwError . PandocParseError . T.pack . show) pure >>=
-                  contentToPandoc
+                  contentToPandoc (report . IgnoredElement))
+        (throwError . PandocParseError . T.pack)
       case result of
-        Left e -> throwError $ PandocParseError $ T.pack $ show e
+        Left e -> throwError e
         Right pdoc -> pure pdoc
-
-instance PandocMonad m => EvaluateM m where
-  loadFileLazyBytes = readFileLazy
-  loadFileText = fmap UTF8.toText . readFileStrict
-  issueWarning msg = report $ IgnoredElement {-- TODO for now --} msg
