@@ -24,11 +24,10 @@ import Text.Pandoc.Definition
 import Typst ( parseTypst, evaluateTypst )
 import Typst.Pandoc (contentToPandoc)
 import qualified Data.Text as T
-import Text.Pandoc.UTF8 as UTF8
 import Text.Pandoc.Parsing (sourceName)
-import Control.Monad.Except ( MonadError(throwError, catchError) )
 import Text.Pandoc.Error (PandocError(..))
 import Text.Pandoc.Logging (LogMessage(..))
+import Control.Monad.Except (throwError)
 
 -- | Read Typst from an input string and return a Pandoc document.
 readTypst :: (PandocMonad m, ToSources a)
@@ -41,11 +40,9 @@ readTypst _opts inp = do
   case parseTypst inputName (sourcesToText sources) of
     Left e -> throwError $ PandocParseError $ T.pack $ show e
     Right parsed -> do
-      result <- catchError
-        (evaluateTypst (\fp -> catchError (readFileStrict fp) (\e -> throwError (show e))) inputName parsed >>=
+      result <- evaluateTypst readFileStrict inputName parsed >>=
                   either (throwError . PandocParseError . T.pack . show) pure >>=
-                  contentToPandoc (report . IgnoredElement))
-        (throwError . PandocParseError . T.pack)
+                  contentToPandoc (report . IgnoredElement)
       case result of
-        Left e -> throwError e
+        Left e -> throwError $ PandocParseError $ T.pack $ show e
         Right pdoc -> pure pdoc
